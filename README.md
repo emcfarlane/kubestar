@@ -4,11 +4,14 @@ Kubernetes configuration management, without all the YAML.
 Build kubernetes objects with Starlark (a python-like dialect).
 Based on [larking.io](https://larking.io) libraries.
 
-![yaml](./docs/yamljpeg)
+![fun with yaml](./docs/yaml.jpeg)
 
-Kubestar takes a starlark file with a `main()` function that returns a kuberentes object.
-Each file is run and optionally tested on any functions prefix with `test_...()`.
-Finally, the protobuf is than encoded to yaml and written to the named file with the '.yaml' ext.
+## How does it work?
+
+1. Kubestar loads all starlark files given.
+2. Each `main()` function is ran expecting a kubernetes protobuf object returned.
+3. Each file is optionally tested on any functions prefix with `test_...()`.
+4. Finally, the protobuf is than encoded to yaml and written to the named file with the '.yaml' ext.
 
 Alternative to:
 - [kustomize](https://github.com/kubernetes-sigs/kustomize)
