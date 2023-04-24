@@ -2,8 +2,11 @@
 
 [![GoDev](https://img.shields.io/static/v1?label=godev&message=reference&color=00add8)](https://pkg.go.dev/github.com/emcfarlane/kubestar?tab=doc)
 
-Build kuberenetes config with [Starklark](https://github.com/google/starlark-go/blob/master/doc/spec.md) (a subset dialect of python). 
+Build kuberenetes config with [Starklark](https://github.com/google/starlark-go/blob/master/doc/spec.md) (a dialect of python) and [protobuffers](https://emcfarlane/starlarkproto).
+Generate config with python functions, strongly typed to protobuffer objects.
+Build out modules for different applications and import them with a function syntax to for easy configuration.
 
+Here's some example syntax to declare an apps/v1 Deployment object:
 ```python
 api_apps_v1.Deployment(
   metadata={
@@ -29,13 +32,13 @@ api_apps_v1.Deployment(
   ),
 )
 ```
-Please see examples.
+Please see examples for more.
 
 ## How does it work?
 
 1. `kubestar` loads all starlark files in a given glob pattern.
 2. Each `main()` function is ran expecting an array of kubernetes protobuf objects.
-4. Finally, the protobuf is than encoded to yaml and written to the named file with the '.yaml' ext.
+4. Finally, the protobuf is than encoded to yaml and written to the named file with the '.star' -> '.yaml'.
 
 Alternative to:
 - [kustomize](https://github.com/kubernetes-sigs/kustomize)
@@ -54,17 +57,24 @@ Have a look at the examples and try with:
 kubestar examples/nginx_deployment.star -v 
 ```
 
+```
+examples
+├── nginx_deployment.star
+└── nginx_deployment.yaml (generated)
+```
+
 ## Features
 
 ### Protobuf syntax
 
 Protobuf wrapping is provided by [`github.com/emcfarlane/starlarkproto`](https://github.com/emcfarlane/starlarkproto). 
+See the repo for more details. Similar types will be cast to protobuffer types.
 
 ### Load common modules
 
 Load common modules with relative path syntax, or absolute based from the cmd init.
 ```python
-load("./relative.proto", "object")
+load("./my_application.star", "object")
 ```
 
 ### Protobuffer file descriptors
