@@ -11,8 +11,6 @@ require (
 	github.com/emcfarlane/starlarkproto v0.0.0-20230424122739-88b5cbd6215b
 	go.starlark.net v0.0.0-20230302034142-4b1e35fe2254
 	google.golang.org/protobuf v1.30.0
-	k8s.io/api v0.23.6
-	k8s.io/apimachinery v0.23.6
 	sigs.k8s.io/yaml v1.3.0
 )
 
