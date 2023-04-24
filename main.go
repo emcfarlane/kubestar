@@ -13,12 +13,7 @@ import (
 
 	"github.com/emcfarlane/starlarkproto"
 	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
 	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protodesc"
-	"google.golang.org/protobuf/reflect/protoregistry"
-	"google.golang.org/protobuf/types/descriptorpb"
 	"sigs.k8s.io/yaml"
 )
 
@@ -26,30 +21,7 @@ var (
 	flagOutDir  = flag.String("out", "", "Out directory.")
 	flagGlobal  = flag.String("global", "", "Global starlark file.")
 	flagVerbose = flag.Bool("v", false, "Verbose mode.")
-
-	//go:embed protos.star
-	protoStar []byte
-
-	//go:embed protos.pb
-	protoPB []byte
 )
-
-func init() {
-	var descSet descriptorpb.FileDescriptorSet
-	if err := proto.Unmarshal(protoPB, &descSet); err != nil {
-		panic(err)
-	}
-	for _, file := range descSet.File {
-		fd, err := protodesc.NewFile(file, protoregistry.GlobalFiles)
-		if err != nil {
-			panic(err)
-		}
-
-		if err := protoregistry.GlobalFiles.RegisterFile(fd); err != nil {
-			panic(err)
-		}
-	}
-}
 
 func run() error {
 	flag.Parse()
@@ -65,24 +37,10 @@ func run() error {
 
 	fsys := os.DirFS(".")
 
-	globals := starlark.StringDict{
-		"struct": starlark.NewBuiltin("struct", starlarkstruct.Make),
-		"proto":  starlarkproto.NewModule(protoregistry.GlobalFiles),
-	}
-
 	loader := NewLoader(fsys, globals)
 
 	thread := &starlark.Thread{
 		Load: loader.Load,
-	}
-	{
-		values, err := starlark.ExecFile(thread, "protos.star", protoStar, globals)
-		if err != nil {
-			return err
-		}
-		for k, v := range values {
-			globals[k] = v
-		}
 	}
 
 	if *flagGlobal != "" {
@@ -193,16 +151,7 @@ func encode(name string, protos []*starlarkproto.Message) error {
 		// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#resources
 		md := vpb.ProtoReflect().Descriptor()
 		kind := string(md.Name())
-		apiVersion := strings.ReplaceAll(
-			strings.TrimSuffix(
-				strings.TrimPrefix(
-					string(md.FullName()),
-					"k8s.io.api.",
-				),
-				"."+string(md.Name()),
-			),
-			".", "/",
-		)
+		apiVersion := genAPIVersion(md.ParentFile())
 		if _, err := fmt.Fprintf(
 			f, objTmpl, apiVersion, kind,
 		); err != nil {
