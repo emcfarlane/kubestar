@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -220,7 +221,12 @@ func encode(name string, protos []*starlarkproto.Message) error {
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Println(err)
+		var evalErr *starlark.EvalError
+		if errors.As(err, &evalErr) {
+			fmt.Println(evalErr.Backtrace())
+		} else {
+			fmt.Println(err)
+		}
 		os.Exit(1)
 	}
 }
