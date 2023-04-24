@@ -4,33 +4,32 @@
 
 Build kuberenetes config with [Starklark](https://github.com/google/starlark-go/blob/master/doc/spec.md) (a subset dialect of python). 
 
-
 ```python
-apps_v1 = proto.file("k8s.io/api/apps/v1/generated.proto")
-
-apps_v1.Deployment(
-    metadata={
-        "name": "nginx-deployment",
-        "labels": {
-            "app": "nginx",
-        },
+api_apps_v1.Deployment(
+  metadata={
+    "name": "nginx-deployment",
+    "labels": {
+      "app": "nginx",
     },
-    spec=apps_v1.DeploymentSpec(
-        replicas=3,
-        selector=struct(matchLabels={
-            "app": "nginx",
+  },
+  spec=api_apps_v1.DeploymentSpec(
+    replicas=3,
+    selector=struct(matchLabels={
+      "app": "nginx",
+    }),
+    template=api_core_v1.PodTemplateSpec(
+      metadata=apimachinery_pkg_apis_meta_v1.ObjectMeta(
+        labels={
+          "app": "nginx",
         }),
-        template=core_v1.PodTemplateSpec(
-            metadata=meta_v1.ObjectMeta(labels={
-                "app": "nginx",
-            }),
-            spec=core_v1.PodSpec(containers=[
-                nginx_container(),
-            ]),
-        ),
+      spec=api_core_v1.PodSpec(containers=[
+        nginx_container(),
+      ]),
     ),
+  ),
 )
 ```
+Please see examples.
 
 ## How does it work?
 
@@ -70,17 +69,18 @@ load("./relative.proto", "object")
 
 ### Protobuffer file descriptors
 
-```
-apps_v1 = proto.file("k8s.io/api/apps/v1/generated.proto")
+Protobuffer file descriptors can be loaded using `proto.file(path)`.
+See `protos.star` for all global namespaced file descriptors. 
 
-# apps_v1.Deployment(...)
-print(dir(apps_v1))
+```python
+api_apps_v1 = proto.file("k8s.io/api/apps/v1/generated.proto")
 ```
+Drop the `k8s.io/` prefix and `/generated.proto` suffix and finally replace `/` with `_`.
 
 ### Global config files
 
 Important config can be declared in a global file with the flag `-global filename.star`. 
-This will expose common config to all files.
+This will exec the file and expose as global config to all source files.
 
 ## Contrib
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -20,14 +21,17 @@ import (
 var (
 	flagOutDir  = flag.String("out", "", "Out directory.")
 	flagGlobal  = flag.String("global", "", "Global starlark file.")
-	flagVerbose = flag.String("v", "", "Verbose mode.")
+	flagVerbose = flag.Bool("v", false, "Verbose mode.")
 )
+
+//go:embed protos.star
+var protoStar []byte
 
 func run() error {
 	flag.Parse()
 
-	args := os.Args[1:] // kubestar examples/nginx_deployment.star -> examples/nginx_deploment.yaml
-	if len(args) != 1 {
+	args := flag.Args() // kubestar examples/nginx_deployment.star -> examples/nginx_deploment.yaml
+	if len(args) < 1 {
 		return fmt.Errorf("missing files glob: e.g. \"*.star\"")
 	}
 	pattern := args[0]
@@ -44,11 +48,21 @@ func run() error {
 
 	loader := NewLoader(fsys, globals)
 
-	if *flagGlobal != "" {
-		thread := &starlark.Thread{
-			Name: *flagGlobal,
-			Load: loader.Load,
+	thread := &starlark.Thread{
+		Load: loader.Load,
+	}
+	{
+		values, err := starlark.ExecFile(thread, "protos.star", protoStar, globals)
+		if err != nil {
+			return err
 		}
+		for k, v := range values {
+			globals[k] = v
+		}
+	}
+
+	if *flagGlobal != "" {
+		thread.Name = *flagGlobal
 		values, err := loader.Load(thread, *flagGlobal)
 		if err != nil {
 			return err
@@ -65,11 +79,7 @@ func run() error {
 
 	protos := make(map[string][]*starlarkproto.Message, len(files))
 	for _, name := range files {
-
-		thread := &starlark.Thread{
-			Name: name,
-			Load: loader.Load,
-		}
+		thread.Name = name
 		values, err := loader.Load(thread, name)
 		if err != nil {
 			return err
@@ -178,7 +188,9 @@ func encode(name string, protos []*starlarkproto.Message) error {
 		if _, err := f.Write(yb); err != nil {
 			return err
 		}
-		fmt.Println(filename)
+		if *flagVerbose {
+			fmt.Println(filename)
+		}
 	}
 	return nil
 }
