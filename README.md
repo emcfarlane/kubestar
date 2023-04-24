@@ -4,7 +4,7 @@
 
 Build kuberenetes config with [Starklark](https://github.com/google/starlark-go/blob/master/doc/spec.md) (a dialect of python) and [protobuffers](https://emcfarlane/starlarkproto).
 Generate config with python functions, strongly typed to protobuffer objects.
-Build out modules for different applications and import them with a function syntax to for easy configuration.
+Build out modules for different applications and import them with a function syntax for easy configuration.
 
 Here's some example syntax to declare an apps/v1 Deployment object:
 ```python
