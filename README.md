@@ -83,7 +83,7 @@ Protobuffer file descriptors can be loaded using `proto.file(path)`.
 See `protos.star` for all global namespaced file descriptors. 
 
 ```python
-api_apps_v1 = proto.file("k8s.io/api/apps/v1/generated.proto")
+apps_v1 = proto.file("k8s.io/api/apps/v1/generated.proto")
 ```
 Drop the `k8s.io/` prefix and `/generated.proto` suffix and finally replace `/` with `_`.
 
@@ -91,6 +91,18 @@ Drop the `k8s.io/` prefix and `/generated.proto` suffix and finally replace `/` 
 
 Important config can be declared in a global file with the flag `-global filename.star`. 
 This will exec the file and expose as global config to all source files.
+
+### Strongly typed
+
+On generation any errors will generate a stacktrace. For example, adding a bad field, `okay=True` field would yield:
+```sh
+$ kubestar examples/*.star
+Traceback (most recent call last):
+  examples/nginx_deployment.star:44:19: in main
+  examples/nginx_deployment.star:35:36: in deployment
+  examples/nginx_deployment.star:6:29: in nginx_container
+Error in Container: Container has no .okay attribute
+```
 
 ## Contrib
 
