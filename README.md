@@ -95,8 +95,16 @@ This will exec the file and expose as global config to all source files.
 ## Contrib
 
 K8s protobuffers are currently gogo generated: https://github.com/kubernetes/kubernetes/issues/96564
-
-Lets hack around this for now by scraping the protobuffers and regnerating it here.
+We will need to clone [api](https://github.com/kubernetes/api) and [apimachinery](https://github.com/kubernetes/apimachinery) repos to a `k8s.io/` directory like:
 ```
-protoc --go_out=source_relative:. $(find k8s.io/ -name "*.proto")
+k8s.io
+├── api
+└── apimachinery
+```
+
+Then generate the `protos.pb` file:
+```sh
+export GOOGLEAPIS_DIR=~/src/github.com/googleapis/api-common-protos
+export K8S_DIR=~/src/github.com
+./gen.sh
 ```

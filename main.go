@@ -14,7 +14,10 @@ import (
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/descriptorpb"
 	"sigs.k8s.io/yaml"
 )
 
@@ -22,10 +25,30 @@ var (
 	flagOutDir  = flag.String("out", "", "Out directory.")
 	flagGlobal  = flag.String("global", "", "Global starlark file.")
 	flagVerbose = flag.Bool("v", false, "Verbose mode.")
+
+	//go:embed protos.star
+	protoStar []byte
+
+	//go:embed protos.pb
+	protoPB []byte
 )
 
-//go:embed protos.star
-var protoStar []byte
+func init() {
+	var descSet descriptorpb.FileDescriptorSet
+	if err := proto.Unmarshal(protoPB, &descSet); err != nil {
+		panic(err)
+	}
+	for _, file := range descSet.File {
+		fd, err := protodesc.NewFile(file, protoregistry.GlobalFiles)
+		if err != nil {
+			panic(err)
+		}
+
+		if err := protoregistry.GlobalFiles.RegisterFile(fd); err != nil {
+			panic(err)
+		}
+	}
+}
 
 func run() error {
 	flag.Parse()
