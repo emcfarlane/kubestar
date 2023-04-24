@@ -1,34 +1,29 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"strings"
-	"testing"
 
-	"github.com/emcfarlane/larking/starlarkproto"
-	"github.com/emcfarlane/larking/starlarkthread"
-	"github.com/emcfarlane/larking/starlib"
-	"github.com/emcfarlane/starlarkassert"
+	"github.com/emcfarlane/starlarkproto"
 	"go.starlark.net/starlark"
+	"go.starlark.net/starlarkstruct"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/reflect/protoregistry"
 	"sigs.k8s.io/yaml"
 )
 
 var (
-	flagOutDir = flag.String("out", "", "Out directory.")
+	flagOutDir  = flag.String("out", "", "Out directory.")
+	flagGlobal  = flag.String("global", "", "Global starlark file.")
+	flagVerbose = flag.String("v", "", "Verbose mode.")
 )
 
-func run(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
+func run() error {
 	flag.Parse()
 
 	args := os.Args[1:] // kubestar examples/nginx_deployment.star -> examples/nginx_deploment.yaml
@@ -40,51 +35,47 @@ func run(ctx context.Context) error {
 		return err // invalid pattern
 	}
 
-	globals := starlib.NewGlobals()
-	loader := starlib.NewLoader()
-	defer loader.Close()
+	fsys := os.DirFS(".")
 
-	runner := func(t testing.TB, thread *starlark.Thread) func() {
-		thread.Load = loader.Load
+	globals := starlark.StringDict{
+		"struct": starlark.NewBuiltin("struct", starlarkstruct.Make),
+		"proto":  starlarkproto.NewModule(protoregistry.GlobalFiles),
+	}
 
-		starlarkthread.SetContext(thread, ctx)
+	loader := NewLoader(fsys, globals)
 
-		close := starlarkthread.WithResourceStore(thread)
-		return func() {
-			if err := close(); err != nil {
-				t.Error(err)
-			}
+	if *flagGlobal != "" {
+		thread := &starlark.Thread{
+			Name: *flagGlobal,
+			Load: loader.Load,
+		}
+		values, err := loader.Load(thread, *flagGlobal)
+		if err != nil {
+			return err
+		}
+		for k, v := range values {
+			globals[k] = v
 		}
 	}
 
-	fsys := os.DirFS(".")
-	var tests []testing.InternalTest
 	files, err := fs.Glob(fsys, pattern)
 	if err != nil {
 		return err
 	}
 
-	protos := make(map[string]*starlarkproto.Message, len(files))
+	protos := make(map[string][]*starlarkproto.Message, len(files))
 	for _, name := range files {
-		src, err := fs.ReadFile(fsys, name)
-		if err != nil {
-			return err
-		}
 
-		// Run.
 		thread := &starlark.Thread{
 			Name: name,
 			Load: loader.Load,
 		}
-		starlarkthread.SetContext(thread, ctx)
-		defer starlarkthread.WithResourceStore(thread)()
-
-		module, err := starlark.ExecFile(
-			thread, name, src, globals)
+		values, err := loader.Load(thread, name)
 		if err != nil {
 			return err
 		}
-		mainFn, ok := module["main"]
+
+		mainFn, ok := values["main"]
 		if !ok {
 			continue
 		}
@@ -92,104 +83,27 @@ func run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		vpb, ok := v.(*starlarkproto.Message)
-		if !ok {
-			return fmt.Errorf("%s: expected *starlarkproto.Message got %T", name, vpb)
-		}
-		protos[name] = vpb
 
-		tests = append(tests, testing.InternalTest{
-			Name: name,
-			F: func(t *testing.T) {
-				starlarkassert.TestFile(
-					t, name, src, globals, runner,
-				)
-			},
-		})
-	}
-
-	// testing
-	var (
-		matchPat string
-		matchRe  *regexp.Regexp
-	)
-	deps := starlarkassert.MatchStringOnly(
-		func(pat, str string) (result bool, err error) {
-			if matchRe == nil || matchPat != pat {
-				matchPat = pat
-				matchRe, err = regexp.Compile(matchPat)
-				if err != nil {
-					return
+		switch v := v.(type) {
+		case *starlarkproto.Message:
+			protos[name] = append(protos[name], v)
+		case *starlark.List:
+			for i := 0; i < v.Len(); i++ {
+				vpb, ok := v.Index(i).(*starlarkproto.Message)
+				if !ok {
+					return fmt.Errorf("%s: expected *starlarkproto.Message got %T", name, vpb)
 				}
+				protos[name] = append(protos[name], vpb)
 			}
-			return matchRe.MatchString(str), nil
-		},
-	)
-	if testing.MainStart(deps, tests, nil, nil, nil).Run() > 0 {
-		return fmt.Errorf("failed")
+		default:
+			return fmt.Errorf("%s: expected *starlarkproto.Message got %T", name, v)
+		}
+
 	}
 
-	// save files
-	for name, vpb := range protos {
-		filename := path.Join(
-			*flagOutDir,
-			strings.TrimSuffix(
-				name, filepath.Ext(name),
-			),
-		) + ".yaml"
-
-		jb, err := protojson.Marshal(vpb)
-		if err != nil {
-			return err
-		}
-
-		md := vpb.ProtoReflect().Descriptor()
-
-		// yaml.JSONToYAML
-		var jsonObj map[string]interface{}
-		if err := yaml.Unmarshal(jb, &jsonObj); err != nil {
-			return err
-		}
-		// encode resource information:
-		// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#resources
-		jsonObj["kind"] = string(md.Name())
-		jsonObj["apiVersion"] = strings.ReplaceAll(
-			strings.TrimSuffix(
-				strings.TrimPrefix(
-					string(md.FullName()),
-					"k8s.io.api.",
-				),
-				"."+string(md.Name()),
-			),
-			".", "/",
-		)
-		yb, err := yaml.Marshal(jsonObj)
-		if err != nil {
-			return err
-		}
-
-		create := func(b []byte) error {
-			f, err := os.Create(filename)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-
-			if _, err := f.WriteString(
-				fmt.Sprintf(yamlTmpl, name),
-			); err != nil {
-				return err
-			}
-
-			if _, err := f.Write(
-				b,
-			); err != nil {
-				return err
-			}
-
-			return nil
-		}
-		if err := create(yb); err != nil {
+	// encode to yaml
+	for name, vpbs := range protos {
+		if err := encode(name, vpbs); err != nil {
 			return err
 		}
 	}
@@ -200,9 +114,77 @@ const yamlTmpl = `# Code generated by kubestar. DO NOT EDIT.
 # source: %s
 `
 
+const objTmpl = `apiVersion: %s
+kind: %s
+`
+
+func encode(name string, protos []*starlarkproto.Message) error {
+	filename := path.Join(
+		*flagOutDir,
+		strings.TrimSuffix(
+			name, filepath.Ext(name),
+		),
+	) + ".yaml"
+
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	for i, vpb := range protos {
+		if i == 0 {
+			if _, err := fmt.Fprintf(
+				f, yamlTmpl, name,
+			); err != nil {
+				return err
+			}
+		} else {
+			if _, err := f.WriteString("---\n"); err != nil {
+				return err
+			}
+		}
+
+		jb, err := protojson.Marshal(vpb)
+		if err != nil {
+			return err
+		}
+
+		yb, err := yaml.JSONToYAML(jb)
+		if err != nil {
+			return err
+		}
+
+		// encode resource information:
+		// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#resources
+		md := vpb.ProtoReflect().Descriptor()
+		kind := string(md.Name())
+		apiVersion := strings.ReplaceAll(
+			strings.TrimSuffix(
+				strings.TrimPrefix(
+					string(md.FullName()),
+					"k8s.io.api.",
+				),
+				"."+string(md.Name()),
+			),
+			".", "/",
+		)
+		if _, err := fmt.Fprintf(
+			f, objTmpl, apiVersion, kind,
+		); err != nil {
+			return err
+		}
+
+		if _, err := f.Write(yb); err != nil {
+			return err
+		}
+		fmt.Println(filename)
+	}
+	return nil
+}
+
 func main() {
-	ctx := context.Background()
-	if err := run(ctx); err != nil {
+	if err := run(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
