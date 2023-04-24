@@ -2,11 +2,6 @@ module github.com/emcfarlane/kubestar
 
 go 1.18
 
-replace (
-	k8s.io/api => ./k8s.io/api
-	k8s.io/apimachinery => ./k8s.io/apimachinery
-)
-
 require (
 	github.com/emcfarlane/starlarkproto v0.0.0-20230424122739-88b5cbd6215b
 	go.starlark.net v0.0.0-20230302034142-4b1e35fe2254
